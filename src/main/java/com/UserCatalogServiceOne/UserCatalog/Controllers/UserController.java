@@ -61,8 +61,19 @@ public class UserController {
         if (identifier.contains("@") && !identifier.matches("^[A-Za-z0-9+_.-]+@(.+)$")) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", "Malformed credential format: Provide a valid email address structure."));
         }
-        String jwt = userService.authenticateUser(loginRequest);
-        return ResponseEntity.ok(new JwtResponse(jwt));
+
+        try {
+            String jwt = userService.authenticateUser(loginRequest);
+            return ResponseEntity.ok(new JwtResponse(jwt));
+        } catch (org.springframework.security.core.AuthenticationException e) {
+            // 🟢 CHANGED: Using 400 Bad Request instead of 401 to bypass the frontend "Session Expired" interceptor
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", "Incorrect email or password. Please try again or register."));
+        } catch (Exception e) {
+            log.error("Login failure trace: ", e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage() != null ? e.getMessage() : "Authentication failed."));
+        }
     }
 
     @PutMapping("/profile")
