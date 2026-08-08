@@ -32,7 +32,7 @@ public class SecurityConfig {
     private final ShieldHandshakeFilter shieldHandshakeFilter;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
-    @Value("${app.cors.allowed-origins:http://localhost:5173,http://localhost:8081,http://localhost:3000}")
+    @Value("${app.cors.allowed-origins:http://localhost:5173,http://localhost:8081,http://localhost:3000,https://ghost-mobile-app-vr9q-rahsi83v0-oma11.vercel.app}")
     private String[] allowedOrigins;
 
     @Bean
