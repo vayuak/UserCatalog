@@ -26,18 +26,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = request.getRequestURI(); // 🟢 Fixed getServletPath bug
+        String path = request.getRequestURI();
         AntPathMatcher pathMatcher = new AntPathMatcher();
 
-        return pathMatcher.match("/api/users/register/**", path)
-                || pathMatcher.match("/api/users/login/**", path)
-                || pathMatcher.match("/api/users/verify-otp/**", path)
-                || pathMatcher.match("/api/users/check-username/**", path)
-                || pathMatcher.match("/api/users/forgot-password/**", path)
-                || pathMatcher.match("/api/users/reset-password/**", path)
+        return pathMatcher.match("/api/users/register*", path)
+                || pathMatcher.match("/api/users/login*", path)
+                || pathMatcher.match("/api/users/verify-otp*", path)
+                || pathMatcher.match("/api/users/check-username*", path)
+                || pathMatcher.match("/api/users/forgot-password*", path)
+                || pathMatcher.match("/api/users/reset-password*", path)
                 || pathMatcher.match("/api/users/internal/**", path)
                 || pathMatcher.match("/actuator/**", path)
-                || pathMatcher.match("/eureka/**", path)
                 || pathMatcher.match("/error", path);
     }
 

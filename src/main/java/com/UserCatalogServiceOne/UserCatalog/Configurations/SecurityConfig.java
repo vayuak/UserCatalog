@@ -80,16 +80,21 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(
+                                "/api/users/login",
                                 "/api/users/login/**",
+                                "/api/users/register",
                                 "/api/users/register/**",
+                                "/api/users/verify-otp",
                                 "/api/users/verify-otp/**",
+                                "/api/users/check-username",
                                 "/api/users/check-username/**",
+                                "/api/users/forgot-password",
                                 "/api/users/forgot-password/**",
+                                "/api/users/reset-password",
                                 "/api/users/reset-password/**",
                                 "/api/users/internal/**",
                                 "/actuator/**",
-                                "/eureka/**",
-                                "/error" // 🟢 CRITICAL: Unmasks real server errors
+                                "/error"
                         ).permitAll()
                         .anyRequest().authenticated()
                 );
