@@ -1,62 +1,88 @@
 package com.UserCatalogServiceOne.UserCatalog.Configurations;
 
+import com.UserCatalogServiceOne.UserCatalog.Models.CustomUserDetails;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
-
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
 @Component
+@Slf4j
 public class JwtUtils {
 
-    // Must be at least 32 characters
-    private final String jwtSecret = "your_very_long_secret_key_that_is_secure_and_unique_12345";
-    private final int jwtExpirationMs = 86400000; // 24 hours
+    @Value("${ghost.shield.jwt-secret:SuperSecurePermanentSecretKeyThatIsAtLeast64BytesLongForSecurityGuarantees}")
+    private String jwtSecret;
 
-    // Helper to get the Signing Key once
+    @Value("${ghost.shield.jwt-expiration:86400000}")
+    private int jwtExpirationMs;
+
     private SecretKey getSigningKey() {
         return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
     }
 
-    public String generateToken(Authentication authentication) {
-        UserDetails userPrincipal = (UserDetails) authentication.getPrincipal();
+    @PostConstruct
+    public void init() {
+        if (jwtSecret == null || jwtSecret.length() < 32) {
+            log.error("❌ GHOST SHIELD CRITICAL: Secret key length insufficient to guarantee cryptographic security.");
+        } else {
+            log.info("✅ GHOST SHIELD ACTIVE: High-Entropy cryptographic key signature loop ready for execution.");
+        }
+    }
 
-        return Jwts.builder()
-                .subject(userPrincipal.getUsername()) // Old: setSubject
-                .issuedAt(new Date()) // Old: setIssuedAt
-                .expiration(new Date((new Date()).getTime() + jwtExpirationMs)) // Old: setExpiration
-                .signWith(getSigningKey()) // SignatureAlgorithm is now inferred
+    public String generateToken(Authentication authentication) {
+        Object principal = authentication.getPrincipal();
+        String username;
+        Long userId = null;
+        boolean isPremium = false;
+
+        if (principal instanceof CustomUserDetails customUser) {
+            username = customUser.getUsername();
+            userId = customUser.getId();
+            isPremium = customUser.isPremium(); // Extracts the user profile state flag directly
+        } else if (principal instanceof org.springframework.security.core.userdetails.UserDetails springUser) {
+            username = springUser.getUsername();
+        } else {
+            username = principal.toString();
+        }
+
+        // Bake permission payload assertions directly into the tamper-proof JWT capsule
+        JwtBuilder builder = Jwts.builder()
+                .subject(username)
+                .claim("username", username)
+                .claim("isPremium", isPremium);
+
+        if (userId != null) {
+            builder.claim("id", userId);
+        }
+
+        return builder
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + jwtExpirationMs))
+                .signWith(getSigningKey())
                 .compact();
     }
 
     public String getUserNameFromJwtToken(String token) {
-        return Jwts.parser() // Old: parserBuilder()
-                .verifyWith(getSigningKey()) // Old: setSigningKey()
+        return Jwts.parser()
+                .verifyWith(getSigningKey())
                 .build()
-                .parseSignedClaims(token) // Old: parseClaimsJws()
-                .getPayload() // Old: getBody()
+                .parseSignedClaims(token)
+                .getPayload()
                 .getSubject();
     }
 
     public boolean validateJwtToken(String authToken) {
         try {
-            Jwts.parser()
-                    .verifyWith(getSigningKey())
-                    .build()
-                    .parseSignedClaims(authToken);
+            Jwts.parser().verifyWith(getSigningKey()).build().parseSignedClaims(authToken);
             return true;
-        } catch (MalformedJwtException e) {
-            System.err.println("Invalid JWT token: " + e.getMessage());
-        } catch (ExpiredJwtException e) {
-            System.err.println("JWT token is expired: " + e.getMessage());
-        } catch (UnsupportedJwtException e) {
-            System.err.println("JWT token is unsupported: " + e.getMessage());
-        } catch (IllegalArgumentException e) {
-            System.err.println("JWT claims string is empty: " + e.getMessage());
+        } catch (JwtException | IllegalArgumentException e) {
+            log.error("Cryptographic signature evaluation breakdown: {}", e.getMessage());
         }
         return false;
     }

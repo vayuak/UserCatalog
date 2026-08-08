@@ -1,5 +1,7 @@
 package com.UserCatalogServiceOne.UserCatalog.Services;
 
+import com.UserCatalogServiceOne.UserCatalog.Models.CustomUserDetails;
+import com.UserCatalogServiceOne.UserCatalog.Models.User;
 import com.UserCatalogServiceOne.UserCatalog.Repositories.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -15,13 +17,8 @@ public class CustomUserDetailsService implements UserDetailsService {
 
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        com.UserCatalogServiceOne.UserCatalog.Models.User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException("User Not Found: " + username));
-
-        return org.springframework.security.core.userdetails.User
-                .withUsername(user.getUsername())
-                .password(user.getPassword())
-                .authorities("USER") // We can expand this later
-                .build();
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new UsernameNotFoundException("Ghost Identity vectors unmapped: " + username));
+        return new CustomUserDetails(user);
     }
 }

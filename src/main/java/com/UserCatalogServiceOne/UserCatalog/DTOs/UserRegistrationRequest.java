@@ -1,10 +1,8 @@
 package com.UserCatalogServiceOne.UserCatalog.DTOs;
 
-import com.UserCatalogServiceOne.UserCatalog.Models.User;
-import com.UserCatalogServiceOne.UserCatalog.Models.User.ContactPreference;
-import jakarta.validation.constraints.*;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
-import java.time.LocalDate;
 
 @Data
 public class UserRegistrationRequest {
@@ -12,24 +10,9 @@ public class UserRegistrationRequest {
     private String username;
 
     @NotBlank(message = "Password is required")
-    @Size(min = 8)
+    @Size(min = 8, message = "Password must be at least 8 characters")
     private String password;
 
     @NotBlank(message = "Contact identifier (Email or Phone) is required")
     private String contactIdentifier;
-
-    @NotBlank(message = "Country code is required")
-    private String countryCode;
-
-    @NotBlank(message = "Country name is required")
-    private String countryName;
-
-    @NotNull(message = "Choose Email or Phone for OTP")
-    private ContactPreference preferredContactMethod;
-
-    @NotNull(message = "Date of Birth is required")
-    private LocalDate dateOfBirth;
-
-    private String fullName;
-    private User.Gender gender;
 }
