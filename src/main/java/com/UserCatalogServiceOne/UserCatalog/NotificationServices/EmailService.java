@@ -1,36 +1,47 @@
 package com.UserCatalogServiceOne.UserCatalog.NotificationServices;
 
-import lombok.RequiredArgsConstructor;
+import com.resend.Resend;
+import com.resend.services.emails.model.CreateEmailOptions;
+import com.resend.services.emails.model.CreateEmailResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class EmailService {
 
-    private final JavaMailSender mailSender;
-
-    @Value("${spring.mail.username}")
-    private String fromEmail;
+    @Value("${resend.api.key}")
+    private String resendApiKey;
 
     @Async
-    public void sendOtpEmail(String to, String otp) {
-        try {
-            SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom(fromEmail);
-            message.setTo(to);
-            message.setSubject("Your Ghost Shield Verification Code");
-            message.setText("Your OTP is: " + otp + ". It will expire in 5 minutes.");
+    public void sendOtpEmail(String toEmail, String otp) {
+        log.info("=================================================");
+        log.info("🔑 [GHOST SHIELD OTP DISPATCH]");
+        log.info("📩 TARGET RECIPIENT: {}", toEmail);
+        log.info("⚡ VERIFICATION CODE: {}", otp);
+        log.info("=================================================");
 
-            mailSender.send(message);
-            log.info("Async Notification Outbound: Mail pushed to {}", to);
+        try {
+            Resend resend = new Resend(resendApiKey);
+
+            CreateEmailOptions params = CreateEmailOptions.builder()
+                    .from("GhostShield <onboarding@resend.dev>")
+                    .to(toEmail)
+                    .subject("Your Ghost Shield Verification Code")
+                    .html("<div style='font-family: sans-serif; background: #000; color: #fff; padding: 20px; border-radius: 8px;'>" +
+                            "<h2 style='color: #888;'>GHOST SHIELD SECURE TERMINAL</h2>" +
+                            "<p>Your verification code is: <b style='font-size: 24px; color: #00C851;'>" + otp + "</b></p>" +
+                            "<p style='color: #888;'>This code will expire in 5 minutes.</p>" +
+                            "</div>")
+                    .build();
+
+            CreateEmailResponse data = resend.emails().send(params);
+            log.info("✅ Live OTP email delivered via Resend API! Message ID: {}", data.getId());
+
         } catch (Exception e) {
-            log.error("CRITICAL SMTP CHANNEL FAILURE: {}", e.getMessage());
+            log.error("⚠️ Resend API Dispatch Failure: {}", e.getMessage());
         }
     }
 }
