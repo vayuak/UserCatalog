@@ -127,7 +127,6 @@ public class UserServiceImpl implements UserServiceInterface {
 
         log.info("📡 [PRODUCTION HARDENED] Outbound mail engine active for '{}'. Redis cluster keys synchronized.", cleanUsername);
     }
-
     @Override
     public User verifyAndRegister(String username, String otp) {
         String cleanUser = username.trim().toLowerCase();
@@ -140,7 +139,6 @@ public class UserServiceImpl implements UserServiceInterface {
             throw new ClientValidationException("No active registration handshake found or code expired.");
         }
 
-        // 🟢 PREVENTS SERIALIZATION ERRORS: Strip out all double-quotes and binary artifacts
         String cleanCached = cachedOtp.replaceAll("[^0-9]", "");
         String cleanInput = otp.replaceAll("[^0-9]", "");
 
@@ -148,7 +146,17 @@ public class UserServiceImpl implements UserServiceInterface {
                 cachedOtp, cleanCached, otp, cleanInput);
 
         if (cleanCached.equals(cleanInput) && !cleanCached.isEmpty()) {
-            User user = (User) redisTemplate.opsForValue().get(userCacheKey);
+            // 🟢 SAFE DESERIALIZATION
+            Object rawUserObj = redisTemplate.opsForValue().get(userCacheKey);
+            User user = null;
+
+            if (rawUserObj instanceof User) {
+                user = (User) rawUserObj;
+            } else if (rawUserObj != null) {
+                // Fallback for Jackson LinkedHashMap conversions
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                user = mapper.convertValue(rawUserObj, User.class);
+            }
 
             stringRedisTemplate.delete(otpCacheKey);
             redisTemplate.delete(userCacheKey);
