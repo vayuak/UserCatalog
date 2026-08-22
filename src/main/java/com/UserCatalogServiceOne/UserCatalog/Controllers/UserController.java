@@ -143,9 +143,8 @@ public class UserController {
     public ResponseEntity<?> getCurrentUserProfile(Authentication authentication) {
         String username = authentication.getName();
         // Assuming your repository has a findByUsername method. Adjust slightly if it returns an Optional.
-        User user = userRepository.findByUsernameContainingIgnoreCase(username).stream().findFirst()
+        User user = userRepository.findByUsernameIgnoreCase(username)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-
         Map<String, Object> profileData = new HashMap<>();
         profileData.put("username", user.getUsername());
         profileData.put("profilePictureUrl", user.getProfilePictureUrl());
