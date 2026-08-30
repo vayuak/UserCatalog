@@ -48,7 +48,7 @@ public class UserServiceImpl implements UserServiceInterface {
     private static final String STAGE_USER_PREFIX = "u:stage:";
     private static final String STAGE_OTP_PREFIX = "u:otp:";
 
-    // 🟢 KILLS THE "123456" GHOST: Wipes in-memory Redis completely clean on startup
+    // 🟢 Wipes in-memory Redis completely clean on startup
     @PostConstruct
     public void clearInMemoryRedisCache() {
         try {
@@ -118,15 +118,20 @@ public class UserServiceImpl implements UserServiceInterface {
         user.setIdentityHash(targetHash);
         user.setPremium(false);
 
-        String otp = String.format("%06d", new Random().nextInt(1000000));
+        // 🟢 GUARANTEED 6-DIGIT OTP FORMAT
+        String otp = String.format("%06d", new Random().nextInt(900000) + 100000);
 
         redisTemplate.opsForValue().set(STAGE_USER_PREFIX + cleanUsername, user, Duration.ofMinutes(10));
         stringRedisTemplate.opsForValue().set(STAGE_OTP_PREFIX + cleanUsername, otp, Duration.ofMinutes(10));
+
+        // 🟢 LOG REGISTRATION OTP DIRECTLY TO CONSOLE TERMINAL
+        log.info("🔑 [REGISTRATION OTP] Generated OTP for @{}: {}", cleanUsername, otp);
 
         emailService.sendOtpEmail(rawEmail, otp);
 
         log.info("📡 [PRODUCTION HARDENED] Outbound mail engine active for '{}'. Redis cluster keys synchronized.", cleanUsername);
     }
+
     @Override
     public User verifyAndRegister(String username, String otp) {
         String cleanUser = username.trim().toLowerCase();
@@ -146,14 +151,12 @@ public class UserServiceImpl implements UserServiceInterface {
                 cachedOtp, cleanCached, otp, cleanInput);
 
         if (cleanCached.equals(cleanInput) && !cleanCached.isEmpty()) {
-            // 🟢 SAFE DESERIALIZATION
             Object rawUserObj = redisTemplate.opsForValue().get(userCacheKey);
             User user = null;
 
             if (rawUserObj instanceof User) {
                 user = (User) rawUserObj;
             } else if (rawUserObj != null) {
-                // Fallback for Jackson LinkedHashMap conversions
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 user = mapper.convertValue(rawUserObj, User.class);
             }
@@ -182,8 +185,6 @@ public class UserServiceImpl implements UserServiceInterface {
         String counterKey = OTP_ATTEMPT_PREFIX + cacheKey;
 
         Long attempts = stringRedisTemplate.opsForValue().increment(counterKey);
-
-        // 🟢 PREVENTS THE "2 ATTEMPTS LEFT" LOOP: Safely fallback to 1 if in-memory increment() fails
         long currentAttempts = (attempts != null && attempts > 0) ? attempts : 1;
 
         if (currentAttempts == 1) {
@@ -257,7 +258,8 @@ public class UserServiceImpl implements UserServiceInterface {
                 ? userRepository.findByIdentityHash(targetResult).orElse(null)
                 : userRepository.findByUsername(targetResult).orElse(null);
 
-        String otp = String.format("%06d", new Random().nextInt(1000000));
+        // 🟢 GUARANTEED 6-DIGIT FORGOT PASSWORD OTP FORMAT
+        String otp = String.format("%06d", new Random().nextInt(900000) + 100000);
 
         if (user != null) {
             user.setResetToken(otp);
@@ -266,10 +268,16 @@ public class UserServiceImpl implements UserServiceInterface {
 
             stringRedisTemplate.delete(OTP_ATTEMPT_PREFIX + user.getUsername());
 
+            // 🟢 LOG FORGOT PASSWORD OTP DIRECTLY TO CONSOLE TERMINAL
+            log.info("🔑 [FORGOT PASSWORD OTP] Generated recovery OTP for @{}: {}", user.getUsername(), otp);
+
             if (identifier.contains("@")) {
                 emailService.sendOtpEmail(identifier, otp);
             }
+        } else {
+            log.warn("⚠️ [FORGOT PASSWORD] Recovery attempt for untraceable identity: {}", identifier);
         }
+
         log.info("Password recovery loop processed inside transaction frame.");
     }
 
@@ -307,7 +315,7 @@ public class UserServiceImpl implements UserServiceInterface {
 
             stringRedisTemplate.delete(OTP_ATTEMPT_PREFIX + user.getUsername());
 
-            log.info("Transactional table re-write finalized successfully.");
+            log.info("Transactional table re-write finalized successfully for @{}.", user.getUsername());
             return;
         }
 
