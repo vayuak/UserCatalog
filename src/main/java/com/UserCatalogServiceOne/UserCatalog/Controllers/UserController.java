@@ -128,17 +128,6 @@ public class UserController {
         return ResponseEntity.ok(users);
     }
 
-    @PutMapping("/internal/profile/update-avatar")
-    public ResponseEntity<?> updateInternalAvatar(
-            @RequestParam String username,
-            @RequestBody Map<String, String> payload) {
-
-        ProfileUpdateRequest request = new ProfileUpdateRequest();
-        request.setProfilePictureUrl(payload.get("profilePictureUrl"));
-
-        userService.updateProfile(username, request);
-        return ResponseEntity.ok(Map.of("status", "SUCCESS"));
-    }
     @GetMapping("/me")
     public ResponseEntity<?> getCurrentUserProfile(Authentication authentication) {
         String username = authentication.getName();
@@ -151,5 +140,34 @@ public class UserController {
         profileData.put("isPremium", user.isPremium());
 
         return ResponseEntity.ok(profileData);
+    }
+
+
+    @PutMapping("/internal/profile/update-avatar")
+    public ResponseEntity<?> updateInternalAvatar(
+            @RequestParam String username,
+            @RequestBody Map<String, String> payload) {
+
+        if (username == null || username.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Username parameter is required."));
+        }
+
+        String avatarUrl = payload != null ? payload.get("profilePictureUrl") : null;
+        if (avatarUrl == null) {
+            // Fallback check if BLOB passed 'url' or 'avatar' key instead
+            avatarUrl = payload.getOrDefault("url", payload.get("avatar"));
+        }
+
+        try {
+            ProfileUpdateRequest request = new ProfileUpdateRequest();
+            request.setProfilePictureUrl(avatarUrl);
+
+            userService.updateProfile(username.trim(), request);
+            return ResponseEntity.ok(Map.of("status", "SUCCESS", "message", "Avatar updated for " + username));
+        } catch (Exception e) {
+            log.error("Failed to sync avatar for username: {}", username, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Cross-node avatar update failed: " + e.getMessage()));
+        }
     }
 }

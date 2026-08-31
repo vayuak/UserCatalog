@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
+
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
@@ -16,7 +17,8 @@ import java.util.Date;
 @Slf4j
 public class JwtUtils {
 
-    @Value("${ghost.shield.jwt-secret:SuperSecurePermanentSecretKeyThatIsAtLeast64BytesLongForSecurityGuarantees}")
+    // 🟢 STRICT SECURITY: No fallback string allowed.
+    @Value("${ghost.shield.jwt-secret}")
     private String jwtSecret;
 
     @Value("${ghost.shield.jwt-expiration:86400000}")
@@ -29,9 +31,9 @@ public class JwtUtils {
     @PostConstruct
     public void init() {
         if (jwtSecret == null || jwtSecret.length() < 32) {
-            log.error("❌ GHOST SHIELD CRITICAL: Secret key length insufficient to guarantee cryptographic security.");
+            log.error("  GHOST SHIELD CRITICAL: Secret key length insufficient to guarantee cryptographic security.");
         } else {
-            log.info("✅ GHOST SHIELD ACTIVE: High-Entropy cryptographic key signature loop ready for execution.");
+            log.info("  GHOST SHIELD ACTIVE: High-Entropy cryptographic key signature loop ready for execution.");
         }
     }
 
@@ -44,14 +46,13 @@ public class JwtUtils {
         if (principal instanceof CustomUserDetails customUser) {
             username = customUser.getUsername();
             userId = customUser.getId();
-            isPremium = customUser.isPremium(); // Extracts the user profile state flag directly
+            isPremium = customUser.isPremium();
         } else if (principal instanceof org.springframework.security.core.userdetails.UserDetails springUser) {
             username = springUser.getUsername();
         } else {
             username = principal.toString();
         }
 
-        // Bake permission payload assertions directly into the tamper-proof JWT capsule
         JwtBuilder builder = Jwts.builder()
                 .subject(username)
                 .claim("username", username)

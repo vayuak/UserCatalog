@@ -16,17 +16,17 @@ import java.io.IOException;
 @Slf4j
 public class ShieldHandshakeFilter extends OncePerRequestFilter {
 
-    @Value("${ghost.shield.key:PermanentSecret999}")
+    // 🟢 STRICT SECURITY: No fallback. Container will crash on startup if missing.
+    @Value("${ghost.shield.key}")
     private String expectedClientKey;
 
-    @Value("${ghost.gateway.secret:CryptographicGhostShieldInternalTokenSignature7350_465}")
+    @Value("${ghost.gateway.secret}")
     private String expectedGatewaySecret;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
         AntPathMatcher pathMatcher = new AntPathMatcher();
-
         return pathMatcher.match("/api/users/register*", path)
                 || pathMatcher.match("/api/users/login*", path)
                 || pathMatcher.match("/api/users/verify-otp*", path)
@@ -41,7 +41,6 @@ public class ShieldHandshakeFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
-
         String clientKey = request.getHeader("X-Ghost-Shield-Key");
         if (clientKey == null) {
             clientKey = request.getHeader("x-ghost-shield-key");
@@ -61,7 +60,7 @@ public class ShieldHandshakeFilter extends OncePerRequestFilter {
         if (isClientKeyValid || isGatewaySecretValid) {
             filterChain.doFilter(request, response);
         } else {
-            log.warn("🚨 Access Denied: Missing or invalid Shield/Gateway headers for path: {}", request.getRequestURI());
+            log.warn("  Access Denied: Missing or invalid Shield/Gateway headers for path: {}", request.getRequestURI());
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("Access Denied: Secure Handshake Failed.");
         }
