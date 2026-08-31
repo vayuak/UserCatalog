@@ -4,7 +4,7 @@ import com.UserCatalogServiceOne.UserCatalog.ExceptionsHandlers.ClientValidation
 import com.UserCatalogServiceOne.UserCatalog.DTOs.LoginRequest;
 import com.UserCatalogServiceOne.UserCatalog.DTOs.UserRegistrationRequest;
 import com.UserCatalogServiceOne.UserCatalog.DTOs.ProfileUpdateRequest;
-import com.UserCatalogServiceOne.UserCatalog.GodMode.CryptoUtils;
+
 import com.UserCatalogServiceOne.UserCatalog.Models.User;
 import com.UserCatalogServiceOne.UserCatalog.NotificationServices.EmailService;
 import com.UserCatalogServiceOne.UserCatalog.Repositories.UserRepository;
@@ -23,6 +23,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -74,11 +76,31 @@ public class UserServiceImpl implements UserServiceInterface {
         }
     }
 
+    // 🟢 NATIVE SHA-256 HASHING (Replaces missing CryptoUtils)
+    private String hashIdentifier(String input) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] encodedhash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hexString = new StringBuilder(2 * encodedhash.length);
+            for (byte b : encodedhash) {
+                String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1) {
+                    hexString.append('0');
+                }
+                hexString.append(hex);
+            }
+            return hexString.toString();
+        } catch (Exception e) {
+            throw new RuntimeException("Critical security failure: SHA-256 algorithm missing.", e);
+        }
+    }
+
     private String normalizeAndHash(String genericInput, char[] methodOut) {
         String input = genericInput.trim();
         if (input.matches(EMAIL_REGEX)) {
             if (methodOut != null && methodOut.length > 0) methodOut[0] = 'E';
-            return CryptoUtils.hashIdentifier(input.toLowerCase());
+            // 🟢 Uses the new internal native hashing
+            return hashIdentifier(input.toLowerCase());
         } else {
             if (methodOut != null && methodOut.length > 0) methodOut[0] = 'U';
             return input.toLowerCase();
