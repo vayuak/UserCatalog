@@ -1,17 +1,19 @@
 package com.UserCatalogServiceOne.UserCatalog.Services;
 
-import com.UserCatalogServiceOne.UserCatalog.ExceptionsHandlers.ClientValidationException;
 import com.UserCatalogServiceOne.UserCatalog.DTOs.LoginRequest;
-import com.UserCatalogServiceOne.UserCatalog.DTOs.UserRegistrationRequest;
 import com.UserCatalogServiceOne.UserCatalog.DTOs.ProfileUpdateRequest;
-
+import com.UserCatalogServiceOne.UserCatalog.DTOs.UserRegistrationRequest;
+import com.UserCatalogServiceOne.UserCatalog.ExceptionsHandlers.ClientValidationException;
 import com.UserCatalogServiceOne.UserCatalog.Models.User;
 import com.UserCatalogServiceOne.UserCatalog.NotificationServices.EmailService;
 import com.UserCatalogServiceOne.UserCatalog.Repositories.UserRepository;
 import com.UserCatalogServiceOne.UserCatalog.Configurations.JwtUtils;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -25,12 +27,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.Random;
 
 @Service
 @RequiredArgsConstructor
@@ -44,21 +46,18 @@ public class UserServiceImpl implements UserServiceInterface {
     private final JwtUtils jwtUtils;
     private final RedisTemplate<String, Object> redisTemplate;
     private final StringRedisTemplate stringRedisTemplate;
+    private final ObjectMapper objectMapper;
 
     private static final String EMAIL_REGEX = "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,6}$";
     private static final String OTP_ATTEMPT_PREFIX = "otp:attempts:";
     private static final String STAGE_USER_PREFIX = "u:stage:";
     private static final String STAGE_OTP_PREFIX = "u:otp:";
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    // 🟢 Wipes in-memory Redis completely clean on startup
+    // 🟢 FIX 1: Preserves in-memory Redis state across server restarts
     @PostConstruct
-    public void clearInMemoryRedisCache() {
-        try {
-            redisTemplate.getConnectionFactory().getConnection().serverCommands().flushDb();
-            log.info("🧹 [IN-MEMORY REDIS] Startup Flush Complete: Wiped all legacy data.");
-        } catch (Exception e) {
-            log.warn("🧹 [IN-MEMORY REDIS] Could not flush DB on startup. Ignoring...");
-        }
+    public void initRedisCache() {
+        log.info("🚀 [REDIS CACHE] Engine active. Preserving existing sessions and OTP states.");
     }
 
     private void enforcePasswordEntropy(String plainPassword) {
@@ -76,7 +75,7 @@ public class UserServiceImpl implements UserServiceInterface {
         }
     }
 
-    // 🟢 NATIVE SHA-256 HASHING (Replaces missing CryptoUtils)
+    // Native SHA-256 Hashing
     private String hashIdentifier(String input) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -99,7 +98,6 @@ public class UserServiceImpl implements UserServiceInterface {
         String input = genericInput.trim();
         if (input.matches(EMAIL_REGEX)) {
             if (methodOut != null && methodOut.length > 0) methodOut[0] = 'E';
-            // 🟢 Uses the new internal native hashing
             return hashIdentifier(input.toLowerCase());
         } else {
             if (methodOut != null && methodOut.length > 0) methodOut[0] = 'U';
@@ -107,8 +105,16 @@ public class UserServiceImpl implements UserServiceInterface {
         }
     }
 
+    private String generateSixDigitOtp() {
+        return String.format("%06d", SECURE_RANDOM.nextInt(900000) + 100000);
+    }
+
     @Override
     public void processRegistration(UserRegistrationRequest request) {
+        if (request == null || request.getUsername() == null || request.getContactIdentifier() == null) {
+            throw new ClientValidationException("Invalid registration payload.");
+        }
+
         String cleanUsername = request.getUsername().trim().toLowerCase();
         String rawEmail = request.getContactIdentifier().trim();
         String plainPassword = request.getPassword();
@@ -140,22 +146,38 @@ public class UserServiceImpl implements UserServiceInterface {
         user.setIdentityHash(targetHash);
         user.setPremium(false);
 
-        // 🟢 GUARANTEED 6-DIGIT OTP FORMAT
-        String otp = String.format("%06d", new Random().nextInt(900000) + 100000);
+        // 🟢 FIX 3: Map Cryptographic Public Key if provided
+        if (request.getPublicKey() != null && !request.getPublicKey().trim().isEmpty()) {
+            user.setPublicKey(request.getPublicKey().trim());
+            user.setPublicKeyUpdatedAt(LocalDateTime.now());
+        }
+
+        String otp = generateSixDigitOtp();
 
         redisTemplate.opsForValue().set(STAGE_USER_PREFIX + cleanUsername, user, Duration.ofMinutes(10));
         stringRedisTemplate.opsForValue().set(STAGE_OTP_PREFIX + cleanUsername, otp, Duration.ofMinutes(10));
 
-        // 🟢 LOG REGISTRATION OTP DIRECTLY TO CONSOLE TERMINAL
         log.info("🔑 [REGISTRATION OTP] Generated OTP for @{}: {}", cleanUsername, otp);
 
-        emailService.sendOtpEmail(rawEmail, otp);
-
-        log.info("📡 [PRODUCTION HARDENED] Outbound mail engine active for '{}'. Redis cluster keys synchronized.", cleanUsername);
+        // 🟢 FIX 2: Graceful Exception Handling & Rollback for Dispatch Failures
+        try {
+            emailService.sendOtpEmail(rawEmail, otp);
+            log.info("📡 [PRODUCTION HARDENED] Outbound mail engine active for '{}'. Redis cluster keys synchronized.", cleanUsername);
+        } catch (Exception e) {
+            // Rollback OTP state from Redis if email sending fails to prevent deadlocks
+            redisTemplate.delete(STAGE_USER_PREFIX + cleanUsername);
+            stringRedisTemplate.delete(STAGE_OTP_PREFIX + cleanUsername);
+            log.error("⚠️ [DISPATCH FAILURE] Could not deliver OTP to {}: {}", rawEmail, e.getMessage());
+            throw new IllegalStateException("Failed to deliver verification code. Please check your email configuration.");
+        }
     }
 
     @Override
     public User verifyAndRegister(String username, String otp) {
+        if (username == null || otp == null) {
+            throw new ClientValidationException("Username and verification code must be provided.");
+        }
+
         String cleanUser = username.trim().toLowerCase();
         String otpCacheKey = STAGE_OTP_PREFIX + cleanUser;
         String userCacheKey = STAGE_USER_PREFIX + cleanUser;
@@ -179,8 +201,7 @@ public class UserServiceImpl implements UserServiceInterface {
             if (rawUserObj instanceof User) {
                 user = (User) rawUserObj;
             } else if (rawUserObj != null) {
-                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                user = mapper.convertValue(rawUserObj, User.class);
+                user = objectMapper.convertValue(rawUserObj, User.class);
             }
 
             stringRedisTemplate.delete(otpCacheKey);
@@ -237,10 +258,13 @@ public class UserServiceImpl implements UserServiceInterface {
     @Override
     public List<String> generateAlternativeUsernames(String base) {
         List<String> variants = new ArrayList<>();
+        if (base == null || base.trim().isEmpty()) {
+            return variants;
+        }
+
         String cleanBase = base.trim().toLowerCase().replaceAll("\\s+", "");
-        Random rand = new Random();
         while (variants.size() < 3) {
-            String candidate = cleanBase + rand.nextInt(999);
+            String candidate = cleanBase + SECURE_RANDOM.nextInt(999);
             if (!userRepository.existsByUsername(candidate) &&
                     !Boolean.TRUE.equals(redisTemplate.hasKey(STAGE_USER_PREFIX + candidate))) {
                 variants.add(candidate);
@@ -251,6 +275,10 @@ public class UserServiceImpl implements UserServiceInterface {
 
     @Override
     public String authenticateUser(LoginRequest loginRequest) {
+        if (loginRequest == null || loginRequest.getIdentifier() == null) {
+            throw new ClientValidationException("Invalid login payload.");
+        }
+
         char[] resolvedType = new char[]{'U'};
         String inputId = loginRequest.getIdentifier().trim();
         String targetResult = normalizeAndHash(inputId, resolvedType);
@@ -273,6 +301,10 @@ public class UserServiceImpl implements UserServiceInterface {
     @Override
     @Transactional
     public void initiatePasswordReset(String identifier) {
+        if (identifier == null || identifier.trim().isEmpty()) {
+            throw new ClientValidationException("Identifier parameter cannot be empty.");
+        }
+
         char[] resolvedType = new char[]{'U'};
         String targetResult = normalizeAndHash(identifier, resolvedType);
 
@@ -280,8 +312,7 @@ public class UserServiceImpl implements UserServiceInterface {
                 ? userRepository.findByIdentityHash(targetResult).orElse(null)
                 : userRepository.findByUsername(targetResult).orElse(null);
 
-        // 🟢 GUARANTEED 6-DIGIT FORGOT PASSWORD OTP FORMAT
-        String otp = String.format("%06d", new Random().nextInt(900000) + 100000);
+        String otp = generateSixDigitOtp();
 
         if (user != null) {
             user.setResetToken(otp);
@@ -290,11 +321,15 @@ public class UserServiceImpl implements UserServiceInterface {
 
             stringRedisTemplate.delete(OTP_ATTEMPT_PREFIX + user.getUsername());
 
-            // 🟢 LOG FORGOT PASSWORD OTP DIRECTLY TO CONSOLE TERMINAL
             log.info("🔑 [FORGOT PASSWORD OTP] Generated recovery OTP for @{}: {}", user.getUsername(), otp);
 
             if (identifier.contains("@")) {
-                emailService.sendOtpEmail(identifier, otp);
+                try {
+                    emailService.sendOtpEmail(identifier, otp);
+                } catch (Exception e) {
+                    log.error("⚠️ [DISPATCH FAILURE] Could not deliver forgot password OTP to {}", identifier, e);
+                    throw new IllegalStateException("Failed to deliver verification code. Please check your email configuration.");
+                }
             }
         } else {
             log.warn("⚠️ [FORGOT PASSWORD] Recovery attempt for untraceable identity: {}", identifier);
@@ -306,6 +341,10 @@ public class UserServiceImpl implements UserServiceInterface {
     @Override
     @Transactional
     public void resetPassword(String identifier, String otp, String newPassword) {
+        if (identifier == null || otp == null || newPassword == null) {
+            throw new ClientValidationException("All reset parameters are required.");
+        }
+
         char[] resolvedType = new char[]{'U'};
         String targetResult = normalizeAndHash(identifier, resolvedType);
 
@@ -351,6 +390,10 @@ public class UserServiceImpl implements UserServiceInterface {
     @Override
     @Transactional
     public void updateProfile(String username, ProfileUpdateRequest request) {
+        if (username == null || request == null) {
+            throw new ClientValidationException("Profile update request parameters incomplete.");
+        }
+
         User user = userRepository.findByUsername(username.trim().toLowerCase())
                 .orElseThrow(() -> new ClientValidationException("Operator identity footprint untraceable."));
 
@@ -360,9 +403,28 @@ public class UserServiceImpl implements UserServiceInterface {
         userRepository.save(user);
     }
 
-    @Override public String getGhostId(String u) { return "id_mapped_node"; }
-    @Override public Optional<User> findByIdentityHash(String h) { return userRepository.findByIdentityHash(h); }
-    @Override public Optional<User> findIdentityHash(String h) { return userRepository.findByIdentityHash(h); }
-    @Override public Optional<User> findByResetToken(String t) { return userRepository.findByResetToken(t); }
-    @Override public boolean existsByUsername(String u) { return userRepository.existsByUsername(u); }
+    @Override
+    public String getGhostId(String u) {
+        return "id_mapped_node";
+    }
+
+    @Override
+    public Optional<User> findByIdentityHash(String h) {
+        return userRepository.findByIdentityHash(h);
+    }
+
+    @Override
+    public Optional<User> findIdentityHash(String h) {
+        return userRepository.findByIdentityHash(h);
+    }
+
+    @Override
+    public Optional<User> findByResetToken(String t) {
+        return userRepository.findByResetToken(t);
+    }
+
+    @Override
+    public boolean existsByUsername(String u) {
+        return userRepository.existsByUsername(u);
+    }
 }

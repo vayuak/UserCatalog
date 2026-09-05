@@ -15,4 +15,6 @@ public class UserRegistrationRequest {
 
     @NotBlank(message = "Contact identifier (Email or Phone) is required")
     private String contactIdentifier;
+    private String publicKey;
+
 }
