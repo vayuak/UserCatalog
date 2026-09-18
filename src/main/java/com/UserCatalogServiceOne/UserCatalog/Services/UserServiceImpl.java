@@ -402,7 +402,21 @@ public class UserServiceImpl implements UserServiceInterface {
         }
         userRepository.save(user);
     }
+    @Override
+    @Transactional
+    public void blockUser(String username) {
+        if (username == null || username.trim().isEmpty()) {
+            throw new ClientValidationException("Target username is required.");
+        }
 
+        User user = userRepository.findByUsername(username.trim().toLowerCase())
+                .orElseThrow(() -> new ClientValidationException("Identity footprint untraceable."));
+
+        user.setBlocked(true);
+        userRepository.save(user);
+
+        log.error("⛔ [GLOBAL BAN EXECUTED] @{} has been permanently locked in Postgres.", user.getUsername());
+    }
     @Override
     public String getGhostId(String u) {
         return "id_mapped_node";

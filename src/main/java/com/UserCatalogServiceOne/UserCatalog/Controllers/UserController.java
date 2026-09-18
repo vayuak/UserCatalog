@@ -170,4 +170,14 @@ public class UserController {
                     .body(Map.of("error", "Cross-node avatar update failed: " + e.getMessage()));
         }
     }
+    /**
+     * INTERNAL API: Called by Spherical Service when a user reaches 3 abuse strikes.
+     * Protected by ShieldHandshakeFilter.
+     */
+    @PostMapping("/internal/block/{username}")
+    public ResponseEntity<?> blockInternalUser(@PathVariable String username) {
+        log.warn("🚨 [INTERNAL ROUTER] Received cross-node block request for @{}", username);
+        userService.blockUser(username);
+        return ResponseEntity.ok(Map.of("status", "SUCCESS", "message", "User banned globally."));
+    }
 }

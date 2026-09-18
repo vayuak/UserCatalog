@@ -31,7 +31,7 @@ public class EmailService {
                     .to(toEmail)
                     .subject("Your Ghost Shield Verification Code")
                     .html("<div style='font-family: sans-serif; background: #000; color: #fff; padding: 20px; border-radius: 8px;'>" +
-                            "<h2 style='color: #888;'>GHOST SHIELD SECURE TERMINAL</h2>" +
+                            "<h2 style='color: #888;'>Caravel</h2>" +
                             "<p>Your verification code is: <b style='font-size: 24px; color: #00C851;'>" + otp + "</b></p>" +
                             "<p style='color: #888;'>This code will expire in 5 minutes.</p>" +
                             "</div>")

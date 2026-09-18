@@ -4,6 +4,7 @@ import com.UserCatalogServiceOne.UserCatalog.Models.CustomUserDetails;
 import com.UserCatalogServiceOne.UserCatalog.Models.User;
 import com.UserCatalogServiceOne.UserCatalog.Repositories.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -19,6 +20,12 @@ public class CustomUserDetailsService implements UserDetailsService {
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("Ghost Identity vectors unmapped: " + username));
+
+        // 🛡️ CRITICAL FIX: Reject login instantly if the user is banned
+        if (user.isBlocked()) {
+            throw new LockedException("Security Exception: Account has been permanently banned due to policy violations.");
+        }
+
         return new CustomUserDetails(user);
     }
 }

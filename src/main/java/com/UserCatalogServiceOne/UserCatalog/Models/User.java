@@ -2,12 +2,15 @@ package com.UserCatalogServiceOne.UserCatalog.Models;
 
 import jakarta.persistence.*;
 import lombok.*;
+
 import java.io.Serial;
 import java.io.Serializable;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 @Entity
 @Table(name = "users", indexes = {
+        // Explicit indexing for fast lookups during login/syncs
         @Index(name = "idx_u", columnList = "username"),
         @Index(name = "idx_i", columnList = "identity_hash")
 })
@@ -34,12 +37,18 @@ public class User implements Serializable {
     @Column(name = "identity_hash", unique = true, nullable = false, length = 64)
     private String identityHash; // Irreversible SHA-256 Hash of the Operator's Email Address
 
-    @Column(name = "profile_picture_url", nullable = true)
+    // Increased length to prevent AWS/Firebase signed URL crashes
+    @Column(name = "profile_picture_url", length = 1024)
     private String profilePictureUrl;
 
     @Column(name = "is_premium", nullable = false)
     @Builder.Default
     private boolean isPremium = false;
+
+    // CRITICAL FIX: To handle the bans coming from the Spherical Service
+    @Column(name = "is_blocked", nullable = false)
+    @Builder.Default
+    private boolean isBlocked = false;
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
@@ -47,23 +56,24 @@ public class User implements Serializable {
     // ====================================================================
     // E2EE KEY DIRECTORY
     // ====================================================================
-    // Base64 X25519 (Curve25519) PUBLIC key for this user's device.
-    // A public key is public by definition: publishing it is safe, and doing so
-    // is what makes end-to-end encryption possible. The matching PRIVATE key
-    // never leaves the device and must never be sent here.
-    //
-    // Nullable so existing users keep working until their app publishes a key.
     @Column(name = "public_key", length = 64)
     private String publicKey;
 
     @Column(name = "public_key_updated_at")
     private LocalDateTime publicKeyUpdatedAt;
 
+    // ====================================================================
+    // SECURITY TOKENS
+    // ====================================================================
+    @Column(name = "reset_token", unique = true, length = 128)
+    private String resetToken;
+
+    @Column(name = "reset_token_expiry")
+    private LocalDateTime resetTokenExpiry;
+
+    // Forces UTC Timezone so timestamps are consistent globally
     @PrePersist
     protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
+        this.createdAt = LocalDateTime.now(ZoneOffset.UTC);
     }
-
-    private String resetToken;
-    private LocalDateTime resetTokenExpiry;
 }
