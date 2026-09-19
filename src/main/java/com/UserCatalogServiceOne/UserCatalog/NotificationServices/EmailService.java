@@ -2,7 +2,6 @@ package com.UserCatalogServiceOne.UserCatalog.NotificationServices;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.scheduling.annotation.Async;
@@ -15,8 +14,8 @@ public class EmailService {
     @Autowired
     private JavaMailSender mailSender;
 
-    @Value("${spring.mail.username}")
-    private String fromEmail;
+    // 🟢 Hardcoded to match MailConfig.java exactly
+    private final String fromEmail = "adityakakade.skncoe.comp@gmail.com";
 
     @Async
     public void sendOtpEmail(String toEmail, String otp) {
@@ -30,7 +29,7 @@ public class EmailService {
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom(fromEmail);
             message.setTo(toEmail);
-            message.setSubject("Your Caravel Verification Code");
+            message.setSubject("Your Ghost Shield Verification Code");
             message.setText("Your verification code is: " + otp + "\n\nThis code will expire in 5 minutes.");
 
             mailSender.send(message);
