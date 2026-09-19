@@ -14,6 +14,8 @@ import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -375,7 +377,7 @@ public class UserServiceImpl implements UserServiceInterface {
             userRepository.save(user);
 
             stringRedisTemplate.delete(OTP_ATTEMPT_PREFIX + user.getUsername());
-
+            redisTemplate.delete("user_details::" + user.getUsername());
             log.info("Transactional table re-write finalized successfully for @{}.", user.getUsername());
             return;
         }
@@ -389,6 +391,7 @@ public class UserServiceImpl implements UserServiceInterface {
 
     @Override
     @Transactional
+    @CacheEvict(value = "user_details", key = "#username.trim().toLowerCase()")
     public void updateProfile(String username, ProfileUpdateRequest request) {
         if (username == null || request == null) {
             throw new ClientValidationException("Profile update request parameters incomplete.");
@@ -404,6 +407,7 @@ public class UserServiceImpl implements UserServiceInterface {
     }
     @Override
     @Transactional
+    @CacheEvict(value = "user_details", key = "#username.trim().toLowerCase()")
     public void blockUser(String username) {
         if (username == null || username.trim().isEmpty()) {
             throw new ClientValidationException("Target username is required.");
@@ -423,6 +427,7 @@ public class UserServiceImpl implements UserServiceInterface {
     }
 
     @Override
+    @Cacheable(value = "users_by_hash", key = "#h", unless = "#result == null || !#result.isPresent()")
     public Optional<User> findByIdentityHash(String h) {
         return userRepository.findByIdentityHash(h);
     }

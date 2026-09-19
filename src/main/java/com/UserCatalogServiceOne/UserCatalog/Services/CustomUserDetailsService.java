@@ -4,6 +4,7 @@ import com.UserCatalogServiceOne.UserCatalog.Models.CustomUserDetails;
 import com.UserCatalogServiceOne.UserCatalog.Models.User;
 import com.UserCatalogServiceOne.UserCatalog.Repositories.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -16,6 +17,7 @@ public class CustomUserDetailsService implements UserDetailsService {
 
     private final UserRepository userRepository;
 
+    @Cacheable(value = "user_details", key = "#username")
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         User user = userRepository.findByUsername(username)
