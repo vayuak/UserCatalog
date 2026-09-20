@@ -274,7 +274,6 @@ public class UserServiceImpl implements UserServiceInterface {
         }
         return variants;
     }
-
     @Override
     public String authenticateUser(LoginRequest loginRequest) {
         if (loginRequest == null || loginRequest.getIdentifier() == null) {
@@ -286,13 +285,25 @@ public class UserServiceImpl implements UserServiceInterface {
         String targetResult = normalizeAndHash(inputId, resolvedType);
 
         String usernameToAuthenticate = targetResult;
+        User matchedUser;
 
+        // 1. Resolve the User object regardless of whether they used Email or Username
         if (resolvedType[0] == 'E') {
-            User matchedUser = userRepository.findByIdentityHash(targetResult)
-                    .orElseThrow(() -> new BadCredentialsException("Invalid identity credentials matrix."));
+            matchedUser = userRepository.findByIdentityHash(targetResult)
+                    .orElseThrow(() -> new BadCredentialsException("Incorrect email or password."));
             usernameToAuthenticate = matchedUser.getUsername();
+        } else {
+            matchedUser = userRepository.findByUsername(targetResult)
+                    .orElseThrow(() -> new BadCredentialsException("Incorrect email or password."));
         }
 
+        // 🟢 2. THE BLOCK CHECK: Prevent access and throw your exact support message
+        if (Boolean.TRUE.equals(matchedUser.isBlocked())) {
+            log.warn("Blocked user {} attempted to log in.", usernameToAuthenticate);
+            throw new ClientValidationException("Your account has been suspended due to multiple community reports. Please contact support at badger.developer.001@gmail.com for assistance.");
+        }
+
+        // 3. Proceed with standard password validation if they are NOT blocked
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(usernameToAuthenticate, loginRequest.getPassword())
         );
