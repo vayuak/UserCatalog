@@ -442,17 +442,10 @@ public class UserServiceImpl implements UserServiceInterface {
     public Optional<User> findByIdentityHash(String h) {
         return userRepository.findByIdentityHash(h);
     }
-
-    @Override
-    public Optional<User> findIdentityHash(String h) {
-        return userRepository.findByIdentityHash(h);
-    }
-
     @Override
     public Optional<User> findByResetToken(String t) {
         return userRepository.findByResetToken(t);
     }
-
     @Override
     public boolean existsByUsername(String u) {
         return userRepository.existsByUsername(u);
