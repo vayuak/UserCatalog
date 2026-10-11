@@ -21,4 +21,5 @@ public interface UserServiceInterface {
     Optional<User> findByResetToken(String resetToken);
     boolean existsByUsername(String username);
     void blockUser(String username);
+    void upgradeUserToPremium(Long userId);
 }

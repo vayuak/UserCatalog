@@ -180,4 +180,13 @@ public class UserController {
         userService.blockUser(username);
         return ResponseEntity.ok(Map.of("status", "SUCCESS", "message", "User banned globally."));
     }
+    /**
+     * INTERNAL API: Called by Social Service upon successful Stripe payment.
+     * Protected by ShieldHandshakeFilter.
+     */
+    @PostMapping("/internal/premium/{userId}")
+    public ResponseEntity<?> upgradeInternalUserToPremium(@PathVariable Long userId) {
+        userService.upgradeUserToPremium(userId);
+        return ResponseEntity.ok(Map.of("status", "SUCCESS", "message", "User upgraded to premium globally."));
+    }
 }

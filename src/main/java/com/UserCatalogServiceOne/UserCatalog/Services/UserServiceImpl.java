@@ -450,4 +450,14 @@ public class UserServiceImpl implements UserServiceInterface {
     public boolean existsByUsername(String u) {
         return userRepository.existsByUsername(u);
     }
+    @Override
+    @Transactional
+    public void upgradeUserToPremium(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ClientValidationException("User identity footprint untraceable."));
+
+        user.setPremium(true);
+        userRepository.save(user);
+        log.info("💎 [GLOBAL SYNC] Postgres DB updated. User {} is now Premium.", userId);
+    }
 }
