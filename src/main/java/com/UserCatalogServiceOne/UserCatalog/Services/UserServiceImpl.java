@@ -56,7 +56,6 @@ public class UserServiceImpl implements UserServiceInterface {
     private static final String STAGE_OTP_PREFIX = "u:otp:";
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    // 🟢 FIX 1: Preserves in-memory Redis state across server restarts
     @PostConstruct
     public void initRedisCache() {
         log.info("🚀 [REDIS CACHE] Engine active. Preserving existing sessions and OTP states.");
@@ -77,7 +76,6 @@ public class UserServiceImpl implements UserServiceInterface {
         }
     }
 
-    // Native SHA-256 Hashing
     private String hashIdentifier(String input) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -148,7 +146,6 @@ public class UserServiceImpl implements UserServiceInterface {
         user.setIdentityHash(targetHash);
         user.setPremium(false);
 
-        // 🟢 FIX 3: Map Cryptographic Public Key if provided
         if (request.getPublicKey() != null && !request.getPublicKey().trim().isEmpty()) {
             user.setPublicKey(request.getPublicKey().trim());
             user.setPublicKeyUpdatedAt(LocalDateTime.now());
@@ -161,12 +158,10 @@ public class UserServiceImpl implements UserServiceInterface {
 
         log.info("🔑 [REGISTRATION OTP] Generated OTP for @{}: {}", cleanUsername, otp);
 
-        // 🟢 FIX 2: Graceful Exception Handling & Rollback for Dispatch Failures
         try {
             emailService.sendOtpEmail(rawEmail, otp);
             log.info("📡 [PRODUCTION HARDENED] Outbound mail engine active for '{}'. Redis cluster keys synchronized.", cleanUsername);
         } catch (Exception e) {
-            // Rollback OTP state from Redis if email sending fails to prevent deadlocks
             redisTemplate.delete(STAGE_USER_PREFIX + cleanUsername);
             stringRedisTemplate.delete(STAGE_OTP_PREFIX + cleanUsername);
             log.error("⚠️ [DISPATCH FAILURE] Could not deliver OTP to {}: {}", rawEmail, e.getMessage());
@@ -287,7 +282,6 @@ public class UserServiceImpl implements UserServiceInterface {
         String usernameToAuthenticate = targetResult;
         User matchedUser;
 
-        // 1. Resolve the User object regardless of whether they used Email or Username
         if (resolvedType[0] == 'E') {
             matchedUser = userRepository.findByIdentityHash(targetResult)
                     .orElseThrow(() -> new BadCredentialsException("Incorrect email or password."));
@@ -297,13 +291,11 @@ public class UserServiceImpl implements UserServiceInterface {
                     .orElseThrow(() -> new BadCredentialsException("Incorrect email or password."));
         }
 
-        // 🟢 2. THE BLOCK CHECK: Prevent access and throw your exact support message
         if (Boolean.TRUE.equals(matchedUser.isBlocked())) {
             log.warn("Blocked user {} attempted to log in.", usernameToAuthenticate);
             throw new ClientValidationException("Your account has been suspended due to multiple community reports. Please contact support at badger.developer.001@gmail.com for assistance.");
         }
 
-        // 3. Proceed with standard password validation if they are NOT blocked
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(usernameToAuthenticate, loginRequest.getPassword())
         );
@@ -430,7 +422,8 @@ public class UserServiceImpl implements UserServiceInterface {
         user.setBlocked(true);
         userRepository.save(user);
 
-        log.error("⛔ [GLOBAL BAN EXECUTED] @{} has been permanently locked in Postgres.", user.getUsername());
+        stringRedisTemplate.opsForValue().set("banned:" + user.getUsername(), "true", Duration.ofDays(7));
+        log.error("⛔ [GLOBAL BAN EXECUTED] @{} has been permanently locked in Postgres and Gateway.", user.getUsername());
     }
     @Override
     public String getGhostId(String u) {
