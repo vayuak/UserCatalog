@@ -14,7 +14,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import java.time.Duration;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -50,7 +52,7 @@ public class UserController {
     }
     @PostMapping("/verify-otp")
     public ResponseEntity<?> verifyOtp(@Valid @RequestBody VerifyOtpRequest request) {
-        log.info("📥 [INBOUND VERIFY] Target Username: '{}' | OTP: '{}'", request.getUsername(), request.getOtp());
+        log.info("Verify-OTP request for @{}", request.getUsername());
 
         User verifiedUser = userService.verifyAndRegister(request.getUsername(), request.getOtp());
         return ResponseEntity.ok(Map.of("message", "User verified and registered successfully."));
@@ -97,9 +99,17 @@ public class UserController {
         return ResponseEntity.badRequest().body(Map.of("error", "No token found."));
     }
 
+    /** Internal only. Returns a SAFE view - never the entity (it holds the password hash and the reset token). */
     @GetMapping("/internal/{id}")
     public ResponseEntity<?> getInternalUser(@PathVariable Long id) {
-        return userRepository.findById(id).map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
+        return userRepository.findById(id).map(u -> ResponseEntity.ok((Object) safeView(u))).orElse(ResponseEntity.notFound().build());
+    }
+
+    private Map<String, Object> safeView(User u) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("username", u.getUsername());
+        m.put("profilePictureUrl", u.getProfilePictureUrl());
+        return m;
     }
 
     // 🟢 UPDATED: Now uses strict ForgotPasswordRequest DTO
@@ -122,10 +132,30 @@ public class UserController {
         return ResponseEntity.ok(Map.of("status", "SUCCESS", "message", "Password securely reset. Please login."));
     }
 
+    /**
+     * SECURITY FIX: this used to return the raw User entities. The social service forwarded them to any logged-in user,
+     * including password hashes, FCM tokens and the password-reset token -> full account takeover of any username.
+     * Now: only username + avatar, exact matches first, max 20.
+     */
     @GetMapping("/internal/search-owners")
-    public ResponseEntity<List<User>> searchUsersByHandle(@RequestParam String username) {
-        List<User> users = userRepository.findByUsernameContainingIgnoreCase(username.trim().toLowerCase());
-        return ResponseEntity.ok(users);
+    public ResponseEntity<List<Map<String, Object>>> searchUsersByHandle(@RequestParam String username) {
+        final String q = username.trim().toLowerCase();
+        if (q.isEmpty()) return ResponseEntity.ok(List.of());
+        List<User> users = new java.util.ArrayList<>(userRepository.findByUsernameContainingIgnoreCase(q));
+        users.sort(Comparator.comparing((User u) -> !u.getUsername().equalsIgnoreCase(q)).thenComparing(User::getUsername));
+        List<Map<String, Object>> out = new java.util.ArrayList<>();
+        for (User u : users) { if (out.size() >= 20) break; out.add(safeView(u)); }
+        return ResponseEntity.ok(out);
+    }
+
+    /** Internal only (called by the social service). Permanently deletes the account row. */
+    @DeleteMapping("/internal/user/{username}")
+    public ResponseEntity<?> deleteInternalUser(@PathVariable String username) {
+        final String name = username.trim().toLowerCase();
+        userRepository.findByUsernameIgnoreCase(name).ifPresent(userRepository::delete);
+        try { stringRedisTemplate.delete("banned:" + name); } catch (Exception ignored) { }
+        log.warn("Account deleted at the user's request: @{}", name);
+        return ResponseEntity.ok(Map.of("status", "SUCCESS"));
     }
 
     @GetMapping("/me")
@@ -188,5 +218,24 @@ public class UserController {
     public ResponseEntity<?> upgradeInternalUserToPremium(@PathVariable Long userId) {
         userService.upgradeUserToPremium(userId);
         return ResponseEntity.ok(Map.of("status", "SUCCESS", "message", "User upgraded to premium globally."));
+    }
+    @PutMapping("/profile/device-token")
+    public ResponseEntity<?> updateDeviceToken(@RequestBody Map<String, String> payload, Authentication authentication) {
+        String token = payload.get("fcmToken");
+        if (token != null && !token.isBlank()) {
+            // Add a setFcmToken() method to your User entity and update it here
+            User user = userRepository.findByUsernameIgnoreCase(authentication.getName())
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+            user.setFcmToken(token);
+            userRepository.save(user);
+        }
+        return ResponseEntity.ok(Map.of("status", "SUCCESS", "message", "Device token synced."));
+    }
+    @GetMapping("/internal/token/{username}")
+    public ResponseEntity<String> getFcmToken(@PathVariable String username) {
+        return userRepository.findByUsernameIgnoreCase(username)
+                .map(User::getFcmToken)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.ok("")); // Return empty string if not found
     }
 }

@@ -32,3 +32,9 @@ build/
 ### VS Code ###
 .vscode/
 .env
+
+# secrets
+*.env
+.env
+firebase-key.json
+DockerMaster.yml

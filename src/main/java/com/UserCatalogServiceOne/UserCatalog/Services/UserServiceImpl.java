@@ -188,8 +188,7 @@ public class UserServiceImpl implements UserServiceInterface {
         String cleanCached = cachedOtp.replaceAll("[^0-9]", "");
         String cleanInput = otp.replaceAll("[^0-9]", "");
 
-        log.info("🔍 OTP Check -> Redis Raw: '{}', Cleaned: '{}' | Input Raw: '{}', Cleaned: '{}'",
-                cachedOtp, cleanCached, otp, cleanInput);
+        log.debug("OTP check performed.");
 
         if (cleanCached.equals(cleanInput) && !cleanCached.isEmpty()) {
             Object rawUserObj = redisTemplate.opsForValue().get(userCacheKey);
@@ -312,6 +311,9 @@ public class UserServiceImpl implements UserServiceInterface {
 
         char[] resolvedType = new char[]{'U'};
         String targetResult = normalizeAndHash(identifier, resolvedType);
+        if (resolvedType[0] != 'E') {
+            return;
+        }
 
         User user = (resolvedType[0] == 'E')
                 ? userRepository.findByIdentityHash(targetResult).orElse(null)
@@ -326,7 +328,7 @@ public class UserServiceImpl implements UserServiceInterface {
 
             stringRedisTemplate.delete(OTP_ATTEMPT_PREFIX + user.getUsername());
 
-            log.info("🔑 [FORGOT PASSWORD OTP] Generated recovery OTP for @{}: {}", user.getUsername(), otp);
+            log.info("Recovery OTP generated for @{}", user.getUsername());
 
             if (identifier.contains("@")) {
                 try {
@@ -352,7 +354,9 @@ public class UserServiceImpl implements UserServiceInterface {
 
         char[] resolvedType = new char[]{'U'};
         String targetResult = normalizeAndHash(identifier, resolvedType);
-
+        if (resolvedType[0] != 'E') {
+            throw new ClientValidationException("Invalid verification parameters mapping match.");
+        }
         User user = (resolvedType[0] == 'E')
                 ? userRepository.findByIdentityHash(targetResult).orElseThrow(() -> new ClientValidationException("Invalid verification parameters mapping match."))
                 : userRepository.findByUsername(targetResult).orElseThrow(() -> new ClientValidationException("Invalid verification parameters mapping match."));
